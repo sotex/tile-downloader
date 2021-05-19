@@ -52,7 +52,7 @@ func NewTileLayer() *TileLayer {
 // NewTileDownloader 返回一个瓦片下载器实例
 //   urlTemplate  瓦片的下载地址模板
 //   layer        瓦片图层的基本信息
-func NewTileDownloader(urlTemplate string, layer *TileLayer) *TileDownloader {
+func NewTileDownloader(urlTemplate string, layer *TileLayer, header http.Header) *TileDownloader {
 	urlTemplate = strings.ReplaceAll(urlTemplate, "{s}", "{{.S}}")
 	urlTemplate = strings.ReplaceAll(urlTemplate, "{x}", "{{.X}}")
 	urlTemplate = strings.ReplaceAll(urlTemplate, "{y}", "{{.Y}}")
@@ -68,11 +68,13 @@ func NewTileDownloader(urlTemplate string, layer *TileLayer) *TileDownloader {
 		layer:       layer,
 		header:      make(http.Header),
 	}
-	td.header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:88.0) Gecko/20100101 Firefox/88.0")
-	td.header.Set("Accept", "image/webp,*/*")
-	td.header.Set("Accept-Language", "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2")
-	td.header.Set("Connection", "keep-alive")
-	// td.header.Set("Referer", "http://map.geoq.cn/arcgis/rest/services/ChinaOnlineCommunity/MapServer?f=jsapi")
+	td.header = header
+	if td.header == nil {
+		td.header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:88.0) Gecko/20100101 Firefox/88.0")
+		td.header.Set("Accept", "image/webp,*/*")
+		td.header.Set("Accept-Language", "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2")
+		td.header.Set("Connection", "keep-alive")
+	}
 	return td
 }
 
@@ -115,7 +117,7 @@ func (td *TileDownloader) downloadTile(z, x, y int) (data []byte, err error) {
 }
 
 // Start 启动下载，会阻塞直到全部下载任务结束
-//   getOutPath 是用于获取瓦片输出路径的函数，可以自己根据需要进行编写
+//   fnGetOutPath 是用于获取瓦片输出路径的函数，可以自己根据需要进行编写
 //   下载过程中会同时进行四个任务的下载，等全部任务结束后才会退出
 func (td *TileDownloader) Start(getOutPath func(z, x, y int) string) {
 	ch := make(chan int, 4)
