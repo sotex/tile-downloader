@@ -17,12 +17,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
 )
 
 type (
-	// TileLayer 瓦片图层基本信息
+	// TileLayer 瓦片图层基本信息.
+	//   这里的参数和 Leaflet 里面瓦片图层的 Options 是类似的.
 	TileLayer struct {
 		MinZoom     int      // 默认0，该图层将显示的最小缩放级别(包括)
 		MaxZoom     int      // 默认18，该图层将显示的最大缩放级别(包括)
@@ -31,24 +33,25 @@ type (
 		YReverse    bool     // 默认false，如果为true，则反转瓦片的Y轴编号
 		ZoomReverse bool     // 默认false，如果设置为true，在tile url中使用的 z = maxZoom-z
 	}
+
+	// TileDownloader 瓦片下载器.
 	TileDownloader struct {
-		urlTemplate *template.Template
-		layer       *TileLayer
-		header      http.Header
+		urlTemplate *template.Template // 瓦片地址的 URL 模板，和 Leaflet 里面是一样的规则
+		layer       *TileLayer         // 瓦片图层信息
+		header      http.Header        // 下载过程时候的 HTTP 头信息，以便添加自定义的 HTTP 头等
 	}
 )
 
+// NewTileLayer 返回一个设置默认参数的 TileLayer 实例
 func NewTileLayer() *TileLayer {
 	return &TileLayer{
-		MinZoom:     0,
-		MaxZoom:     18,
-		SubDomains:  nil,
-		ZoomOffset:  0,
-		YReverse:    false,
-		ZoomReverse: false,
+		MaxZoom: 18,
 	}
 }
 
+// NewTileDownloader 返回一个瓦片下载器实例
+//   urlTemplate  瓦片的下载地址模板
+//   layer        瓦片图层的基本信息
 func NewTileDownloader(urlTemplate string, layer *TileLayer) *TileDownloader {
 	urlTemplate = strings.ReplaceAll(urlTemplate, "{s}", "{{.S}}")
 	urlTemplate = strings.ReplaceAll(urlTemplate, "{x}", "{{.X}}")
@@ -73,6 +76,7 @@ func NewTileDownloader(urlTemplate string, layer *TileLayer) *TileDownloader {
 	return td
 }
 
+// 下载一个瓦片数据
 func (td *TileDownloader) downloadTile(z, x, y int) (data []byte, err error) {
 	var tileIndex = struct {
 		X int
@@ -110,7 +114,10 @@ func (td *TileDownloader) downloadTile(z, x, y int) (data []byte, err error) {
 	return ioutil.ReadAll(resp.Body)
 }
 
-func (td *TileDownloader) Start(outDir string) {
+// Start 启动下载，会阻塞直到全部下载任务结束
+//   getOutPath 是用于获取瓦片输出路径的函数，可以自己根据需要进行编写
+//   下载过程中会同时进行四个任务的下载，等全部任务结束后才会退出
+func (td *TileDownloader) Start(getOutPath func(z, x, y int) string) {
 	ch := make(chan int, 4)
 	var wg sync.WaitGroup
 	for z := td.layer.MinZoom; z <= td.layer.MaxZoom; z++ {
@@ -122,9 +129,8 @@ func (td *TileDownloader) Start(outDir string) {
 					ch <- 1
 					data, err := td.downloadTile(z, x, y)
 					if err == nil {
-						dirname := fmt.Sprintf("%s/Z%d/%d", outDir, z, y)
-						filename := fmt.Sprintf("%s/Z%d/%d/%d.png", outDir, z, y, x)
-						os.MkdirAll(dirname, os.ModePerm)
+						filename := getOutPath(z, x, y)
+						os.MkdirAll(path.Dir(filename), os.ModePerm)
 						ioutil.WriteFile(filename, data, 0755)
 					} else {
 						fmt.Println("错误:", err)
